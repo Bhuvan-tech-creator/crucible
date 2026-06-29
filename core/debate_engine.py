@@ -9,6 +9,9 @@ Flow:
 
 Each step yields Server-Sent Event (SSE) strings that Flask streams directly to
 the browser so the user sees messages as they arrive.
+
+Conversation style: each agent speaks in 1–2 sentences per turn, directly
+addressing prior speakers by name, producing a natural back-and-forth dialogue.
 """
 
 import json
@@ -41,7 +44,7 @@ def run(
         system_msg = _build_system(agent, round_num=0, total_rounds=num_rounds)
         user_msg = (
             f"Engineering document:\n{truncated_doc}\n\n"
-            "Give your opening statement about this project."
+            "Give your opening statement in exactly 1–2 sentences."
         )
         reply = _call(system_msg, user_msg)
         msg = _build_message(agent, reply, phase="Opening", round_num=0)
@@ -56,11 +59,14 @@ def run(
 
         for agent in agents:
             system_msg = _build_system(agent, round_num=round_num, total_rounds=num_rounds)
+            other_agents = [a["name"] for a in agents if a["id"] != agent["id"]]
+            others_str = ", ".join(other_agents)
             user_msg = (
                 f"Engineering document:\n{truncated_doc}\n\n"
                 f"Debate so far:\n{history_block}\n\n"
-                f"Your turn in round {round_num}. "
-                "Directly engage with what others have argued."
+                f"Other participants: {others_str}\n\n"
+                f"Round {round_num}: Reply in exactly 1–2 sentences. "
+                "Address a specific claim made by one of the other participants by name."
             )
             reply = _call(system_msg, user_msg)
             msg = _build_message(agent, reply, phase=f"Round {round_num}", round_num=round_num)
@@ -114,22 +120,26 @@ def _build_system(agent: dict, round_num: int, total_rounds: int) -> str:
             "Focus on your domain's specific implications for the project's viability."
         )
 
-    context = (
-        f"This is your opening statement." if round_num == 0
-        else f"This is round {round_num} of {total_rounds}. "
-             "Rebut specific points made by other agents — name them and challenge their logic."
-    )
+    if round_num == 0:
+        context = "This is your opening statement — introduce your core position concisely."
+    else:
+        context = (
+            f"This is round {round_num} of {total_rounds}. "
+            "Pick one specific claim made by another participant and challenge or support it directly. "
+            "Mention their name naturally, as if speaking to them in a room."
+        )
 
     return (
-        f"You are {agent['name']}, a panellist in an engineering review debate.\n"
+        f"You are {agent['name']}, a panellist in a live engineering review debate.\n"
         f"Expertise: {skillset}\n"
         f"Role directive: {directive}\n\n"
         f"{context}\n\n"
         "Rules:\n"
-        "- 3–5 sentences maximum per turn\n"
+        "- EXACTLY 1–2 sentences per turn — never more\n"
+        "- Speak conversationally and directly, as if in a real discussion\n"
         "- Reference actual content from the engineering document\n"
-        "- Speak in argumentative prose — no bullet points\n"
-        "- Be decisive and pointed"
+        "- No bullet points, no numbered lists, no headers\n"
+        "- Be decisive, pointed, and natural in tone"
     )
 
 
@@ -166,8 +176,9 @@ def _call(
     user: str,
     model: str = FAST_MODEL,
     temperature: float = 0.82,
-    max_tokens: int = 320,
+    max_tokens: int = 160,
 ) -> str:
+    # max_tokens reduced to 160 to enforce the 1–2 sentence limit naturally
     return chat(
         messages=[
             {"role": "system", "content": system},
