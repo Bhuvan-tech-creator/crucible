@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: crucible
+    env: python
+    region: ohio
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    autoDeploy: true
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: HOST
+        value: 0.0.0.0
