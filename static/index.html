@@ -3,57 +3,52 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Engineering Auditor</title>
+  <title>Crucible</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&f[]=jet-brains-mono@400,700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/style.css" />
 </head>
 <body>
-  <div class="app-shell">
+  <div class="app-shell" id="appShell" data-stage="upload">
 
     <!-- ── Top bar ──────────────────────────────────────────────── -->
     <header class="topbar">
       <div class="brand">
         <div class="logo" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-               stroke-linecap="round" stroke-linejoin="round" aria-label="Engineering Auditor logo">
-            <path d="M4 17.5 12 3l8 14.5"></path>
-            <path d="M7.5 14h9"></path>
-            <path d="M9.25 17.5h5.5"></path>
-            <circle cx="12" cy="10.2" r="1.15" fill="currentColor" stroke="none"></circle>
+               stroke-linecap="round" stroke-linejoin="round" aria-label="Crucible logo">
+            <path d="M6 3h12l-2 7H8L6 3Z"></path>
+            <path d="M8 10c0 4 2 7 4 7s4-3 4-7"></path>
+            <path d="M5 3H3M21 3h-2"></path>
+            <path d="M12 17v4M9 21h6"></path>
           </svg>
         </div>
-        <div class="brand-copy">
-          <h1>Engineering Auditor</h1>
-          <p>Upload an engineering document, generate specialist agents, run a live adversarial debate, and get a judge's verdict.</p>
-        </div>
+        <span class="brand-name">Crucible</span>
       </div>
 
       <div class="topbar-actions">
-        <div class="api-key-wrap" aria-label="Groq API key setup">
-          <input id="apiKeyInput" type="password"
-            placeholder="Enter your Groq API key (or set GROQ_API_KEY in .env)" />
-          <button id="saveKeyBtn" class="btn btn-primary" type="button">Save Key</button>
+        <div class="stage-breadcrumb" aria-label="Current stage">
+          <span class="crumb" data-crumb="upload">Upload</span>
+          <span class="crumb-sep">›</span>
+          <span class="crumb" data-crumb="debate">Debate</span>
+          <span class="crumb-sep">›</span>
+          <span class="crumb" data-crumb="verdict">Verdict</span>
         </div>
-        <button id="themeToggle" class="btn btn-ghost" type="button" aria-label="Toggle theme">
-          Light Mode
-        </button>
-        <div id="apiStatus" class="status-pill">
-          <span class="status-dot"></span><span>Backend ready</span>
+        <div class="status-pill" id="debateStatus">
+          <span class="status-dot"></span><span>Idle</span>
         </div>
       </div>
     </header>
 
     <!-- ── Three-panel workspace ────────────────────────────────── -->
-    <main class="workspace">
+    <main class="workspace" id="workspace">
 
       <!-- LEFT — Document + Agents -->
-      <section class="panel" aria-labelledby="document-panel-title">
+      <section class="panel panel-upload" id="panelUpload" aria-labelledby="document-panel-title">
         <div class="panel-header">
           <div class="panel-title">
             <h2 id="document-panel-title">Document + Agents</h2>
-            <p>Upload the spec, review extracted text, configure the debate roster.</p>
           </div>
         </div>
         <div class="panel-body">
@@ -62,8 +57,8 @@
             <!-- Upload zone -->
             <div class="upload-zone">
               <div>
-                <h3>Start with the engineering file</h3>
-                <p class="muted">Supports PDF, DOCX, TXT, Markdown, or any plain-text format.</p>
+                <h3>Drop your engineering document</h3>
+                <p class="muted">PDF, DOCX, TXT, Markdown — any plain-text format.</p>
               </div>
               <label class="file-input" for="documentFile">
                 <input id="documentFile" type="file"
@@ -72,13 +67,13 @@
                   <div style="font-size:1.8rem; margin-bottom:0.5rem;">📄</div>
                   <strong>Drop a file here or click to browse</strong>
                   <p class="muted" style="margin-top:0.5rem;">
-                    The backend extracts text and proposes engineering debate agents automatically.
+                    Agents are generated automatically from the document content.
                   </p>
                 </div>
               </label>
               <div class="toolbar-row">
                 <button id="analyzeBtn" class="btn btn-primary" type="button">Analyze Document</button>
-                <button id="clearBtn"   class="btn btn-secondary" type="button">Reset Workspace</button>
+                <button id="clearBtn"   class="btn btn-secondary" type="button">Reset</button>
               </div>
             </div>
 
@@ -111,10 +106,10 @@
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
                   <div>
                     <strong style="display:block; margin-bottom:0.25rem;">Debate Roster</strong>
-                    <p class="muted">Edit generated agents, remove weak ones, or add your own specialist before launch.</p>
+                    <p class="muted">Edit, remove, or add specialists before launch.</p>
                   </div>
                   <button id="addAgentBtn" class="btn btn-secondary" type="button">
-                    Add Custom Agent
+                    Add Agent
                   </button>
                 </div>
                 <div id="agentList" class="stack"></div>
@@ -126,14 +121,20 @@
       </section>
 
       <!-- CENTRE — Live Debate Timeline -->
-      <section class="panel" aria-labelledby="debate-panel-title">
+      <section class="panel panel-debate" id="panelDebate" aria-labelledby="debate-panel-title">
         <div class="panel-header">
           <div class="panel-title">
             <h2 id="debate-panel-title">Live Debate</h2>
-            <p>Every agent argues in public. You see the cross-examination, round by round.</p>
           </div>
-          <div class="status-pill" id="debateStatus">
-            <span class="status-dot"></span><span>Idle</span>
+          <div class="kpi-inline">
+            <span class="kpi-inline-item">
+              <span class="kpi-inline-label">Agents</span>
+              <span class="kpi-inline-val" id="kpiAgents">0</span>
+            </span>
+            <span class="kpi-inline-item">
+              <span class="kpi-inline-label">Messages</span>
+              <span class="kpi-inline-val" id="kpiMessages">0</span>
+            </span>
           </div>
         </div>
         <div class="panel-body">
@@ -152,7 +153,7 @@
                   </select>
                 </div>
                 <div class="field">
-                  <label>Debate Mode</label>
+                  <label>Mode</label>
                   <select disabled>
                     <option selected>Open adversarial review</option>
                   </select>
@@ -163,20 +164,8 @@
                   Run Debate
                 </button>
                 <button id="stopDebateBtn" class="btn btn-danger"  type="button" disabled>
-                  Stop Stream
+                  Stop
                 </button>
-              </div>
-            </div>
-
-            <!-- KPIs -->
-            <div class="kpi-grid">
-              <div class="kpi">
-                <div class="kpi-label">Agents</div>
-                <div class="kpi-value" id="kpiAgents">0</div>
-              </div>
-              <div class="kpi">
-                <div class="kpi-label">Messages</div>
-                <div class="kpi-value" id="kpiMessages">0</div>
               </div>
             </div>
 
@@ -186,9 +175,7 @@
                 <div class="symbol">🧠</div>
                 <div>
                   <strong>Nothing has debated yet.</strong>
-                  <p class="muted">
-                    Analyze a document, fine-tune the agent list, and start the discussion.
-                  </p>
+                  <p class="muted">Analyze a document, configure agents, and start.</p>
                 </div>
               </div>
             </div>
@@ -197,12 +184,11 @@
         </div>
       </section>
 
-      <!-- RIGHT — Verdict + Summary -->
-      <section class="panel" aria-labelledby="summary-panel-title">
+      <!-- RIGHT — Verdict -->
+      <section class="panel panel-verdict" id="panelVerdict" aria-labelledby="summary-panel-title">
         <div class="panel-header">
           <div class="panel-title">
-            <h2 id="summary-panel-title">Verdict + Summary</h2>
-            <p>The judge's conclusion updates here after the debate finishes.</p>
+            <h2 id="summary-panel-title">Verdict</h2>
           </div>
         </div>
         <div class="panel-body">
@@ -210,9 +196,7 @@
             <div id="summaryCard" class="summary-card">
               <div>
                 <strong style="display:block; margin-bottom:0.35rem;">Judge Output</strong>
-                <p class="muted">
-                  This panel captures the final structured decision and recommendations.
-                </p>
+                <p class="muted">The final structured decision appears here after the debate.</p>
               </div>
               <div id="summaryContent" class="summary-content muted">No verdict yet.</div>
             </div>
@@ -221,6 +205,21 @@
       </section>
 
     </main>
+
+    <!-- ── Bottom bar — theme toggle bottom-left ────────────────── -->
+    <footer class="bottombar">
+      <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="5"/>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+        <span class="theme-label"></span>
+      </button>
+    </footer>
+
   </div><!-- /.app-shell -->
 
   <!-- ── Custom Agent Modal ─────────────────────────────────────── -->
@@ -229,7 +228,7 @@
       <div class="modal-header">
         <div>
           <h3 id="agentModalTitle">Add Custom Agent</h3>
-          <p class="muted">Define a specialist, advocate, or reviewer with explicit skills.</p>
+          <p class="muted">Define a specialist with explicit skills.</p>
         </div>
         <button id="closeModalBtn" class="icon-btn" type="button" aria-label="Close modal">✕</button>
       </div>
@@ -259,7 +258,7 @@
         <label for="agentSkillsInput">Skillset</label>
         <input id="agentSkillsInput" type="text"
           placeholder="Comma-separated, e.g. fracture mechanics, fatigue analysis, alloys" />
-        <p class="helper-text">These skills feed directly into the agent's debate persona prompt.</p>
+        <p class="helper-text">These skills feed directly into the agent's debate persona.</p>
       </div>
 
       <div class="two-col">
@@ -283,7 +282,7 @@
   <!-- ── Toast container ────────────────────────────────────────── -->
   <div id="toastWrap" class="toast-wrap" aria-live="polite" aria-atomic="true"></div>
 
-  <!-- ── JavaScript modules ─────────────────────────────────────── -->
+  <!-- ── JavaScript ─────────────────────────────────────────────── -->
   <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>

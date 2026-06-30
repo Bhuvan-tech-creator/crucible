@@ -1,6 +1,6 @@
 """
 app.py
-Engineering Auditor — application entry point.
+Crucible — application entry point.
 
 Responsibilities:
   - Create and configure the Flask app
@@ -54,21 +54,21 @@ def create_app() -> Flask:
 if __name__ == "__main__":
     app = create_app()
 
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", 5000))
+    host  = os.getenv("HOST", "0.0.0.0")
+    port  = int(os.getenv("PORT", 5000))
     debug = os.getenv("FLASK_ENV", "development") == "development"
 
     print("=" * 62)
-    print("  Engineering Auditor — AI Debate System")
+    print("  Crucible — AI Engineering Debate System")
     print("=" * 62)
     print(f"  App:    http://localhost:{port}")
     print(f"  Debug:  {debug}")
 
     groq_key = os.getenv("GROQ_API_KEY", "")
     if groq_key:
-        print(f"  Groq:   ✓  Key loaded from environment ({groq_key[:8]}...)")
+        print(f"  Groq:   ✓  Key loaded from .env ({groq_key[:8]}...)")
     else:
-        print("  Groq:   ⚠  No GROQ_API_KEY in environment — enter it in the UI")
+        print("  Groq:   ⚠  No GROQ_API_KEY found in .env — add it and restart")
 
     print("=" * 62)
 

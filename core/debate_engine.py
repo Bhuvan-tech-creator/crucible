@@ -10,8 +10,8 @@ Flow:
 Each step yields Server-Sent Event (SSE) strings that Flask streams directly to
 the browser so the user sees messages as they arrive.
 
-Conversation style: each agent speaks in 1–2 sentences per turn, directly
-addressing prior speakers by name, producing a natural back-and-forth dialogue.
+Conversation style: each agent speaks in exactly ONE sentence per turn, directly
+addressing prior speakers by name for a natural fast-paced dialogue.
 """
 
 import json
@@ -44,7 +44,7 @@ def run(
         system_msg = _build_system(agent, round_num=0, total_rounds=num_rounds)
         user_msg = (
             f"Engineering document:\n{truncated_doc}\n\n"
-            "Give your opening statement in exactly 1–2 sentences."
+            "Give your opening statement in exactly ONE sentence."
         )
         reply = _call(system_msg, user_msg)
         msg = _build_message(agent, reply, phase="Opening", round_num=0)
@@ -65,7 +65,7 @@ def run(
                 f"Engineering document:\n{truncated_doc}\n\n"
                 f"Debate so far:\n{history_block}\n\n"
                 f"Other participants: {others_str}\n\n"
-                f"Round {round_num}: Reply in exactly 1–2 sentences. "
+                f"Round {round_num}: Respond in exactly ONE sentence. "
                 "Address a specific claim made by one of the other participants by name."
             )
             reply = _call(system_msg, user_msg)
@@ -121,12 +121,12 @@ def _build_system(agent: dict, round_num: int, total_rounds: int) -> str:
         )
 
     if round_num == 0:
-        context = "This is your opening statement — introduce your core position concisely."
+        context = "This is your opening statement — state your core position in a single punchy sentence."
     else:
         context = (
             f"This is round {round_num} of {total_rounds}. "
             "Pick one specific claim made by another participant and challenge or support it directly. "
-            "Mention their name naturally, as if speaking to them in a room."
+            "Mention their name naturally, as if speaking to them face to face."
         )
 
     return (
@@ -135,11 +135,11 @@ def _build_system(agent: dict, round_num: int, total_rounds: int) -> str:
         f"Role directive: {directive}\n\n"
         f"{context}\n\n"
         "Rules:\n"
-        "- EXACTLY 1–2 sentences per turn — never more\n"
-        "- Speak conversationally and directly, as if in a real discussion\n"
+        "- EXACTLY ONE sentence — hard limit, never more\n"
+        "- Speak conversationally and directly, as if in a real room\n"
         "- Reference actual content from the engineering document\n"
-        "- No bullet points, no numbered lists, no headers\n"
-        "- Be decisive, pointed, and natural in tone"
+        "- No bullet points, no lists, no headers\n"
+        "- Be sharp, decisive, and natural"
     )
 
 
@@ -176,9 +176,9 @@ def _call(
     user: str,
     model: str = FAST_MODEL,
     temperature: float = 0.82,
-    max_tokens: int = 160,
+    max_tokens: int = 100,
 ) -> str:
-    # max_tokens reduced to 160 to enforce the 1–2 sentence limit naturally
+    # max_tokens=100 is a hard ceiling enforcing the single-sentence rule
     return chat(
         messages=[
             {"role": "system", "content": system},
@@ -192,13 +192,13 @@ def _call(
 
 def _build_message(agent: dict, content: str, phase: str, round_num: int) -> dict:
     return {
-        "agent_id": agent["id"],
-        "agent_name": agent["name"],
+        "agent_id":    agent["id"],
+        "agent_name":  agent["name"],
         "agent_color": agent.get("color", "#888"),
-        "agent_icon": agent.get("icon", "🤖"),
-        "phase": phase,
-        "round": round_num,
-        "content": content,
+        "agent_icon":  agent.get("icon", "🤖"),
+        "phase":       phase,
+        "round":       round_num,
+        "content":     content,
     }
 
 
