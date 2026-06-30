@@ -125,7 +125,7 @@ def _build_system(agent: dict, round_num: int, total_rounds: int,
         f"Role directive: {directive}\n\n"
         f"{context}\n\n"
         "Rules:\n"
-        "- EXACTLY ONE sentence — hard limit, never more\n"
+        "- EXACTLY ONE SHORT sentence — hard limit, never more\n"
         "- Speak conversationally and directly\n"
         "- Reference actual content from the engineering document\n"
         "- No bullet points, no lists, no headers\n"
@@ -152,8 +152,8 @@ def _judge_verdict(doc: str, agents: list[dict], full_debate: str) -> str:
         "**ACTIONS**\n"
         "• Up to 3 bullets. Each = one specific, actionable next step for the engineering team.\n\n"
         "**SCORE** — A number out of 100 that YOU calculate based on the balance of evidence "
-        "in THIS specific debate. Do NOT use 72 as a default. Justify it in one clause.\n\n"
-        "Total length: under 200 words. Zero padding. No transitional phrases."
+        "in THIS specific debate. Justify it in one clause.\n\n"
+        "Total length: under 100 words. Zero padding. No transitional phrases. Do not truncate text, make the answer shorter if necessary, but make sure you finish the entire thing."
     )
     user = (
         f"Engineering document:\n{doc}\n\n"
