@@ -1,19 +1,16 @@
 /**
  * static/js/api.js
- * All fetch calls to the Flask backend, returning parsed data or throwing errors.
- * Keeps the network layer isolated so main.js stays free of raw fetch logic.
+ * All fetch calls to the Flask backend.
+ * Updated to support multi-file uploads via getlist("files").
  */
 
 const BASE = "";  // Same origin
 
 /**
  * POST /api/set-key
- * Send a Groq API key to the backend for in-memory storage.
- * @param {string} apiKey
- * @returns {Promise<{status: string, message: string}>}
  */
 export async function setKey(apiKey) {
-  const res = await fetch(`${BASE}/api/set-key`, {
+  const res  = await fetch(`${BASE}/api/set-key`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ api_key: apiKey }),
@@ -25,14 +22,22 @@ export async function setKey(apiKey) {
 
 /**
  * POST /api/analyze
- * Upload a file and receive the extracted text + generated agent roster.
- * @param {File} file
- * @returns {Promise<{document_text, document_type, project_summary, agents}>}
+ * Now accepts a FileList or array of File objects.
+ *
+ * @param {FileList|File[]} files
+ * @returns {Promise<{document_text, document_type, project_summary, agents, file_count, file_names}>}
  */
-export async function analyzeDocument(file) {
+export async function analyzeDocument(files) {
   const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch(`${BASE}/api/analyze`, {
+
+  // Normalise to an iterable
+  const fileArray = files instanceof FileList ? Array.from(files) : [].concat(files);
+
+  fileArray.forEach((f) => {
+    formData.append("files", f);
+  });
+
+  const res  = await fetch(`${BASE}/api/analyze`, {
     method: "POST",
     body:   formData,
   });
@@ -43,14 +48,13 @@ export async function analyzeDocument(file) {
 
 /**
  * POST /api/debate
- * Start a streaming debate session. Returns a ReadableStream.
- * Callers are responsible for reading and parsing the SSE events.
+ * Start a streaming debate session.
  *
- * @param {string}   documentText  Extracted document text
- * @param {object[]} agents        Agent roster
- * @param {number}   rounds        Number of cross-examination rounds
- * @param {AbortSignal} signal     From an AbortController to cancel the stream
- * @returns {Promise<Response>}    The raw streaming Response
+ * @param {string}      documentText
+ * @param {object[]}    agents
+ * @param {number}      rounds
+ * @param {AbortSignal} signal
+ * @returns {Promise<Response>}
  */
 export async function startDebate(documentText, agents, rounds, signal) {
   const res = await fetch(`${BASE}/api/debate`, {

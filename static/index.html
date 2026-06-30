@@ -57,27 +57,29 @@
             <!-- Upload zone -->
             <div class="upload-zone">
               <div>
-                <h3>Drop your engineering document</h3>
-                <p class="muted">PDF, DOCX, TXT, Markdown — any plain-text format.</p>
+                <h3>Drop your engineering files</h3>
+                <p class="muted">Select multiple files at once to combine them into a single analysis.</p>
               </div>
               <label class="file-input" for="documentFile">
-                <input id="documentFile" type="file"
-                  accept=".pdf,.docx,.txt,.md,.text,.markdown,.rtf,.csv" />
+                <input id="documentFile" type="file" multiple
+                  accept=".pdf,.docx,.txt,.md,.text,.markdown,.rtf,.csv,
+                          .stl,.obj,.gltf,.glb,.ply,.3mf,.step,.stp" />
                 <div>
-                  <div style="font-size:1.8rem; margin-bottom:0.5rem;">📄</div>
-                  <strong>Drop a file here or click to browse</strong>
+                  <div style="font-size:1.8rem; margin-bottom:0.5rem;">📂</div>
+                  <strong>Drop files here or click to browse</strong>
                   <p class="muted" style="margin-top:0.5rem;">
-                    Agents are generated automatically from the document content.
+                    Documents: PDF, DOCX, TXT, MD, CSV<br>
+                    3D Models: STL, OBJ, GLTF, GLB, PLY, 3MF, STEP
                   </p>
                 </div>
               </label>
               <div class="toolbar-row">
-                <button id="analyzeBtn" class="btn btn-primary" type="button">Analyze Document</button>
+                <button id="analyzeBtn" class="btn btn-primary" type="button" disabled>Analyze Document</button>
                 <button id="clearBtn"   class="btn btn-secondary" type="button">Reset</button>
               </div>
             </div>
 
-            <!-- File metadata -->
+            <!-- File metadata (shown immediately on file pick) -->
             <div id="fileMeta" class="file-meta hidden"></div>
 
             <!-- Document type + summary -->
@@ -206,17 +208,10 @@
 
     </main>
 
-    <!-- ── Bottom bar — theme toggle bottom-left ────────────────── -->
+    <!-- ── Bottom bar — plain text theme toggle ──────────────────── -->
     <footer class="bottombar">
-      <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle theme">
-        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="5"/>
-          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-        </svg>
-        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-        </svg>
-        <span class="theme-label"></span>
+      <button id="themeToggle" class="btn btn-ghost theme-toggle-btn" type="button" aria-label="Toggle theme">
+        Light Mode
       </button>
     </footer>
 
@@ -283,6 +278,6 @@
   <div id="toastWrap" class="toast-wrap" aria-live="polite" aria-atomic="true"></div>
 
   <!-- ── JavaScript ─────────────────────────────────────────────── -->
-  <script type="module" src="/static/js/main.js"></script>
+  <script src="/static/js/main.js"></script>
 </body>
 </html>

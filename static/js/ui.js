@@ -1,7 +1,7 @@
 /**
  * static/js/ui.js
  * DOM helper functions — rendering, toasts, KPI updates, timeline management.
- * No state mutations happen here; callers pass the values they want rendered.
+ * Updated to render multi-file metadata in the upload zone.
  */
 
 import { state } from "./state.js";
@@ -75,27 +75,27 @@ export function applyTheme(theme) {
 export function setApiStatus(text, tone = "ok") {
   els.apiStatus.innerHTML = `<span class="status-dot"></span><span>${esc(text)}</span>`;
   const isErr = tone === "error";
-  els.apiStatus.style.color           = isErr ? "#ff9aa5" : "var(--color-primary)";
-  els.apiStatus.style.background      = isErr ? "rgba(255,107,122,0.12)" : "rgba(76,201,216,0.10)";
-  els.apiStatus.style.borderColor     = isErr ? "rgba(255,107,122,0.22)" : "rgba(76,201,216,0.18)";
+  els.apiStatus.style.color       = isErr ? "#ff9aa5" : "var(--color-primary)";
+  els.apiStatus.style.background  = isErr ? "rgba(255,107,122,0.12)" : "rgba(76,201,216,0.10)";
+  els.apiStatus.style.borderColor = isErr ? "rgba(255,107,122,0.22)" : "rgba(76,201,216,0.18)";
 }
 
 export function setDebateStatus(text, running = false) {
   els.debateStatus.innerHTML = `<span class="status-dot"></span><span>${esc(text)}</span>`;
-  els.debateStatus.style.color        = running ? "var(--color-warning)" : "var(--color-primary)";
-  els.debateStatus.style.background   = running ? "rgba(255,176,77,0.12)" : "rgba(76,201,216,0.10)";
-  els.debateStatus.style.borderColor  = running ? "rgba(255,176,77,0.25)" : "rgba(76,201,216,0.18)";
+  els.debateStatus.style.color       = running ? "var(--color-warning)" : "var(--color-primary)";
+  els.debateStatus.style.background  = running ? "rgba(255,176,77,0.12)" : "rgba(76,201,216,0.10)";
+  els.debateStatus.style.borderColor = running ? "rgba(255,176,77,0.25)" : "rgba(76,201,216,0.18)";
 }
 
 /* ── Toasts ─────────────────────────────────────────────────────────── */
 
 export function showToast(message, type = "success", ttl = 3200) {
   const toast = document.createElement("div");
-  toast.className = `toast ${type}`;
+  toast.className   = `toast ${type}`;
   toast.textContent = message;
   els.toastWrap.appendChild(toast);
   setTimeout(() => {
-    toast.style.opacity = "0";
+    toast.style.opacity   = "0";
     toast.style.transform = "translateY(8px)";
     setTimeout(() => toast.remove(), 220);
   }, ttl);
@@ -104,33 +104,65 @@ export function showToast(message, type = "success", ttl = 3200) {
 /* ── KPI counters ───────────────────────────────────────────────────── */
 
 export function updateKpis() {
-  els.kpiAgents.textContent   = String(state.agents.length);
-  els.kpiMessages.textContent = String(state.messageCount);
+  els.kpiAgents.textContent      = String(state.agents.length);
+  els.kpiMessages.textContent    = String(state.messageCount);
   els.agentCountChip.textContent = `${state.agents.length} Agent${state.agents.length === 1 ? "" : "s"}`;
 }
 
 /* ── File metadata ──────────────────────────────────────────────────── */
 
-export function renderFileMeta(file) {
-  if (!file) return;
-  const kb = (file.size / 1024).toFixed(1);
+/**
+ * Renders metadata for one or more selected files.
+ * @param {FileList|File[]} files
+ */
+export function renderFileMeta(files) {
+  if (!files || files.length === 0) return;
+
+  const fileArray = Array.from(files);
+  const totalSize = fileArray.reduce((sum, f) => sum + f.size, 0);
+  const totalKb   = (totalSize / 1024).toFixed(1);
+
+  // Build a chip for each file — icon determined by extension
+  const fileChips = fileArray.map((f) => {
+    const ext  = f.name.split(".").pop().toLowerCase();
+    const icon = _fileIcon(ext);
+    const kb   = (f.size / 1024).toFixed(1);
+    return `<div class="chip file-chip">
+      <span>${icon}</span>
+      <span>${esc(f.name)}</span>
+      <span class="chip-size">${kb} KB</span>
+    </div>`;
+  }).join("");
+
   els.fileMeta.innerHTML = `
     <div class="stack" style="gap:0.6rem;">
-      <strong>Selected File</strong>
-      <div class="chips">
-        <div class="chip">${esc(file.name)}</div>
-        <div class="chip">${kb} KB</div>
-        <div class="chip">${esc(file.type || "text/plain")}</div>
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+        <strong>${fileArray.length} file${fileArray.length > 1 ? "s" : ""} selected</strong>
+        <span class="chip">${totalKb} KB total</span>
       </div>
+      <div class="chips">${fileChips}</div>
     </div>`;
   els.fileMeta.classList.remove("hidden");
 }
 
 /* ── Document analysis results ──────────────────────────────────────── */
 
-export function renderDocumentMeta(documentType, projectSummary) {
-  els.docTypeChip.textContent       = documentType;
+export function renderDocumentMeta(documentType, projectSummary, fileCount, fileNames) {
+  els.docTypeChip.textContent        = documentType;
   els.projectSummaryText.textContent = projectSummary || "No summary returned.";
+
+  // Update agent count chip (called again after renderAgents, but set here too)
+  if (fileCount && fileCount > 1) {
+    // Add a secondary chip showing how many files were merged
+    const existingFileChip = els.documentSummaryCard.querySelector(".file-count-chip");
+    if (!existingFileChip) {
+      const chip = document.createElement("div");
+      chip.className = "chip file-count-chip";
+      chip.textContent = `${fileCount} files merged`;
+      els.docTypeChip.parentElement.appendChild(chip);
+    }
+  }
+
   els.documentSummaryCard.classList.remove("hidden");
 }
 
@@ -154,7 +186,7 @@ export function renderAgents(agents, onEdit, onDelete) {
   } else {
     els.agentList.innerHTML = "";
     agents.forEach((agent) => {
-      const card = document.createElement("article");
+      const card  = document.createElement("article");
       card.className = "agent-card";
       const label = humanRole(agent.role);
       card.innerHTML = `
@@ -213,7 +245,7 @@ export function clearTimeline() {
 export function appendPhase(content) {
   removeTimelineEmpty();
   const phase = document.createElement("div");
-  phase.className = "phase-card";
+  phase.className   = "phase-card";
   phase.textContent = content;
   els.timeline.appendChild(phase);
   scrollBottom();
@@ -288,8 +320,8 @@ export function readModal() {
 /* ── Internal helpers ───────────────────────────────────────────────── */
 
 function humanRole(role) {
-  if (role === "failure")    return "Failure Advocate";
-  if (role === "success")    return "Success Advocate";
+  if (role === "failure") return "Failure Advocate";
+  if (role === "success") return "Success Advocate";
   return "Domain Specialist";
 }
 
@@ -306,4 +338,17 @@ function fromModalRole(value) {
 function safeColor(color) {
   if (color && color.startsWith("#") && (color.length === 7 || color.length === 4)) return color;
   return "#8e44ad";
+}
+
+/**
+ * Returns an appropriate emoji icon for a file extension.
+ */
+function _fileIcon(ext) {
+  const map = {
+    pdf:  "📄", docx: "📝", doc: "📝",
+    txt:  "📃", md:   "📃", csv: "📊",
+    stl:  "🧊", obj:  "🧊", gltf:"🧊", glb: "🧊",
+    ply:  "🧊", "3mf":"🧊", step:"🧊", stp: "🧊",
+  };
+  return map[ext] || "📎";
 }

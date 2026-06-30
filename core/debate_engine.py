@@ -3,15 +3,11 @@ core/debate_engine.py
 Orchestrates the full multi-agent adversarial debate.
 
 Flow:
-  1. Opening statements — every agent speaks once without prior context.
-  2. N rounds of cross-examination — every agent reads the recent history and rebuts.
-  3. Judge verdict — a single high-quality model synthesises the full debate.
+  1. Opening statements — every agent speaks once.
+  2. N rounds of cross-examination — agents read recent history and rebut.
+  3. Judge verdict — concise, document-specific structured summary.
 
-Each step yields Server-Sent Event (SSE) strings that Flask streams directly to
-the browser so the user sees messages as they arrive.
-
-Conversation style: each agent speaks in exactly ONE sentence per turn, directly
-addressing prior speakers by name for a natural fast-paced dialogue.
+Each step yields SSE strings that Flask streams directly to the browser.
 """
 
 import json
@@ -19,7 +15,6 @@ from typing import Generator
 
 from core.groq_client import chat, FAST_MODEL, SMART_MODEL
 
-# How many history turns to feed into each agent per round (keeps prompts tight)
 _HISTORY_WINDOW = 8
 
 
@@ -30,8 +25,6 @@ def run(
 ) -> Generator[str, None, None]:
     """
     Generator that yields SSE-formatted strings.
-
-    Callers should use this inside a Flask Response with mimetype='text/event-stream'.
     Each yielded value is a complete SSE event ending in '\\n\\n'.
     """
     truncated_doc = doc_text[:6000]
@@ -58,9 +51,10 @@ def run(
         history_block = "\n\n".join(history[-_HISTORY_WINDOW:])
 
         for agent in agents:
-            system_msg = _build_system(agent, round_num=round_num, total_rounds=num_rounds)
             other_agents = [a["name"] for a in agents if a["id"] != agent["id"]]
-            others_str = ", ".join(other_agents)
+            others_str   = ", ".join(other_agents)
+            system_msg   = _build_system(agent, round_num=round_num,
+                                         total_rounds=num_rounds, other_names=others_str)
             user_msg = (
                 f"Engineering document:\n{truncated_doc}\n\n"
                 f"Debate so far:\n{history_block}\n\n"
@@ -69,7 +63,8 @@ def run(
                 "Address a specific claim made by one of the other participants by name."
             )
             reply = _call(system_msg, user_msg)
-            msg = _build_message(agent, reply, phase=f"Round {round_num}", round_num=round_num)
+            msg   = _build_message(agent, reply, phase=f"Round {round_num}",
+                                   round_num=round_num)
             history.append(f"{agent['name']}: {reply}")
             yield _sse({"type": "message", "message": msg})
 
@@ -78,12 +73,7 @@ def run(
 
     verdict = _judge_verdict(truncated_doc, agents, "\n\n".join(history))
     judge_msg = _build_message(
-        {
-            "id": "judge",
-            "name": "Judge",
-            "color": "#2c3e50",
-            "icon": "⚖️",
-        },
+        {"id": "judge", "name": "Judge", "color": "#2c3e50", "icon": "⚖️"},
         verdict,
         phase="Verdict",
         round_num=num_rounds + 1,
@@ -97,8 +87,9 @@ def run(
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _build_system(agent: dict, round_num: int, total_rounds: int) -> str:
-    role = agent.get("role", "specialist")
+def _build_system(agent: dict, round_num: int, total_rounds: int,
+                  other_names: str = "") -> str:
+    role     = agent.get("role", "specialist")
     skillset = ", ".join(agent.get("skillset", []))
 
     if role == "failure":
@@ -116,8 +107,7 @@ def _build_system(agent: dict, round_num: int, total_rounds: int) -> str:
     else:
         directive = (
             f"You are a domain specialist in {skillset}. "
-            "Raise critical concerns AND acknowledge genuine strengths. "
-            "Focus on your domain's specific implications for the project's viability."
+            "Raise the sharpest concern from your domain relevant to this specific project."
         )
 
     if round_num == 0:
@@ -125,8 +115,8 @@ def _build_system(agent: dict, round_num: int, total_rounds: int) -> str:
     else:
         context = (
             f"This is round {round_num} of {total_rounds}. "
-            "Pick one specific claim made by another participant and challenge or support it directly. "
-            "Mention their name naturally, as if speaking to them face to face."
+            f"Pick one specific claim made by another participant ({other_names}) "
+            "and challenge or support it directly. Mention their name naturally."
         )
 
     return (
@@ -136,7 +126,7 @@ def _build_system(agent: dict, round_num: int, total_rounds: int) -> str:
         f"{context}\n\n"
         "Rules:\n"
         "- EXACTLY ONE sentence — hard limit, never more\n"
-        "- Speak conversationally and directly, as if in a real room\n"
+        "- Speak conversationally and directly\n"
         "- Reference actual content from the engineering document\n"
         "- No bullet points, no lists, no headers\n"
         "- Be sharp, decisive, and natural"
@@ -144,45 +134,46 @@ def _build_system(agent: dict, round_num: int, total_rounds: int) -> str:
 
 
 def _judge_verdict(doc: str, agents: list[dict], full_debate: str) -> str:
-    names = ", ".join(a["name"] for a in agents)
+    """
+    Produce a short, document-specific, information-dense verdict.
+    The score must be derived from the actual debate — no placeholder examples.
+    """
+    names  = ", ".join(a["name"] for a in agents)
     system = (
-        "You are the Judge overseeing a multi-agent engineering review panel.\n"
-        f"You have heard from: {names}.\n\n"
-        "Produce a structured final verdict using EXACTLY these headings "
-        "(bold markdown, on their own lines):\n\n"
-        "**OVERALL VERDICT**\n"
-        "1–2 sentences on project viability.\n\n"
-        "**KEY STRENGTHS**\n"
-        "The 2–3 most compelling arguments made FOR the project.\n\n"
-        "**CRITICAL CONCERNS**\n"
-        "The 2–3 most important risks or flaws raised against the project.\n\n"
-        "**RECOMMENDED ACTIONS**\n"
-        "3–4 concrete, actionable next steps for the engineering team.\n\n"
-        "**CONFIDENCE SCORE**\n"
-        "A score out of 100 with a one-line rationale, e.g. '72/100 — Conditionally viable, "
-        "pending materials validation.'\n\n"
-        "Be decisive, balanced, and reference specific debate arguments."
+        "You are the Judge of an engineering review panel.\n"
+        f"Panellists: {names}.\n\n"
+        "Write a concise verdict using EXACTLY these headings (bold markdown, own line).\n"
+        "Every line must cite a SPECIFIC finding from the debate or document — no generic filler.\n\n"
+        "**VERDICT** — one sentence: viable / conditional / not viable, and the single most decisive reason why.\n\n"
+        "**STRENGTHS**\n"
+        "• Up to 2 bullets. Each must name a concrete engineering strength from the document.\n\n"
+        "**RISKS**\n"
+        "• Up to 2 bullets. Each must name a concrete risk raised during the debate.\n\n"
+        "**ACTIONS**\n"
+        "• Up to 3 bullets. Each = one specific, actionable next step for the engineering team.\n\n"
+        "**SCORE** — A number out of 100 that YOU calculate based on the balance of evidence "
+        "in THIS specific debate. Do NOT use 72 as a default. Justify it in one clause.\n\n"
+        "Total length: under 200 words. Zero padding. No transitional phrases."
     )
     user = (
         f"Engineering document:\n{doc}\n\n"
         f"Full debate transcript:\n{full_debate}\n\n"
-        "Deliver the final verdict."
+        "Deliver the verdict now. Base the score entirely on the evidence above."
     )
-    return _call(system, user, model=SMART_MODEL, temperature=0.35, max_tokens=900)
+    return _call(system, user, model=SMART_MODEL, temperature=0.55, max_tokens=450)
 
 
 def _call(
     system: str,
     user: str,
-    model: str = FAST_MODEL,
+    model: str         = FAST_MODEL,
     temperature: float = 0.82,
-    max_tokens: int = 100,
+    max_tokens: int    = 100,
 ) -> str:
-    # max_tokens=100 is a hard ceiling enforcing the single-sentence rule
     return chat(
         messages=[
             {"role": "system", "content": system},
-            {"role": "user", "content": user},
+            {"role": "user",   "content": user},
         ],
         model=model,
         temperature=temperature,
@@ -195,7 +186,7 @@ def _build_message(agent: dict, content: str, phase: str, round_num: int) -> dic
         "agent_id":    agent["id"],
         "agent_name":  agent["name"],
         "agent_color": agent.get("color", "#888"),
-        "agent_icon":  agent.get("icon", "🤖"),
+        "agent_icon":  agent.get("icon",  "🤖"),
         "phase":       phase,
         "round":       round_num,
         "content":     content,

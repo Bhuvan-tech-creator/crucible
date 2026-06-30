@@ -12,7 +12,6 @@
 
 const appShell            = document.getElementById('appShell');
 const themeToggle         = document.getElementById('themeToggle');
-const themeLabel          = themeToggle.querySelector('.theme-label');
 
 const documentFile        = document.getElementById('documentFile');
 const analyzeBtn          = document.getElementById('analyzeBtn');
@@ -57,7 +56,7 @@ const crumbs    = document.querySelectorAll('.crumb');
 let agents       = [];
 let documentText = '';
 let messageCount = 0;
-let activeStream = null;  // AbortController for SSE fetch
+let activeStream = null;
 
 // ── Stage management ────────────────────────────────────────────────────────
 
@@ -70,34 +69,78 @@ function setStage(stage) {
 
 (function initTheme() {
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const theme = prefersDark ? 'dark' : 'light';
-  document.documentElement.setAttribute('data-theme', theme);
-  updateThemeLabel(theme);
+  applyTheme(prefersDark ? 'dark' : 'light');
 })();
 
 themeToggle.addEventListener('click', () => {
   const current = document.documentElement.getAttribute('data-theme');
-  const next    = current === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  updateThemeLabel(next);
+  applyTheme(current === 'dark' ? 'light' : 'dark');
 });
 
-function updateThemeLabel(theme) {
-  themeLabel.textContent = theme === 'dark' ? 'Light Mode' : 'Dark Mode';
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  themeToggle.textContent = theme === 'dark' ? 'Light Mode' : 'Dark Mode';
 }
 
-// ── Analyze document ─────────────────────────────────────────────────────────
+// ── File selection → immediate preview ───────────────────────────────────────
+// Shows file chips as soon as the user picks files, before clicking Analyze.
+
+documentFile.addEventListener('change', () => {
+  const files = Array.from(documentFile.files);
+  if (!files.length) {
+    fileMeta.classList.add('hidden');
+    fileMeta.innerHTML = '';
+    analyzeBtn.disabled = true;
+    return;
+  }
+  renderFileMeta(files);
+  analyzeBtn.disabled = false;
+});
+
+function renderFileMeta(files) {
+  const totalBytes = files.reduce((s, f) => s + f.size, 0);
+  const chips = files.map(f => {
+    const ext  = f.name.split('.').pop().toLowerCase();
+    const icon = fileIcon(ext);
+    return `<div class="chip file-chip">
+      <span>${icon}</span>
+      <span class="chip-filename">${escapeHTML(f.name)}</span>
+      <span class="chip-size">${formatBytes(f.size)}</span>
+    </div>`;
+  }).join('');
+
+  fileMeta.innerHTML = `
+    <div class="file-meta-inner">
+      <div class="file-meta-summary">
+        <strong>${files.length} file${files.length > 1 ? 's' : ''} selected</strong>
+        <span class="chip">${formatBytes(totalBytes)} total</span>
+      </div>
+      <div class="chips file-chips">${chips}</div>
+    </div>`;
+  fileMeta.classList.remove('hidden');
+}
+
+function fileIcon(ext) {
+  const map = {
+    pdf: '📄', docx: '📝', doc: '📝',
+    txt: '📃', md: '📃', csv: '📊',
+    stl: '🧊', obj: '🧊', gltf: '🧊', glb: '🧊',
+    ply: '🧊', '3mf': '🧊', step: '🧊', stp: '🧊',
+  };
+  return map[ext] || '📎';
+}
+
+// ── Analyze document ──────────────────────────────────────────────────────────
 
 analyzeBtn.addEventListener('click', async () => {
-  const file = documentFile.files[0];
-  if (!file) { toast('Please select a file first.', 'error'); return; }
+  const files = Array.from(documentFile.files);
+  if (!files.length) { toast('Please select at least one file first.', 'error'); return; }
 
   setAnalyzeLoading(true);
-  fileMeta.classList.remove('hidden');
-  fileMeta.textContent = `📄  ${file.name}  (${formatBytes(file.size)})`;
 
+  // Append every file under the key "files" so the backend receives all of them
   const form = new FormData();
-  form.append('file', file);
+  files.forEach(f => form.append('files', f));
 
   try {
     const res  = await fetch('/api/analyze', { method: 'POST', body: form });
@@ -106,30 +149,37 @@ analyzeBtn.addEventListener('click', async () => {
     if (!res.ok) { toast(data.error || 'Analysis failed.', 'error'); return; }
 
     documentText = data.document_text;
-    agents       = data.agents;
+    agents       = data.agents || [];
 
     // Summary card
-    docTypeChip.textContent        = data.document_type;
-    agentCountChip.textContent     = `${agents.length} agents`;
-    projectSummaryText.textContent = data.project_summary;
+    docTypeChip.textContent        = data.document_type    || 'Engineering Document';
+    agentCountChip.textContent     = `${agents.length} agent${agents.length !== 1 ? 's' : ''}`;
+    projectSummaryText.textContent = data.project_summary  || '';
+
+    // Remove any stale merge chip, then add one if multi-file
+    const stale = documentSummaryCard.querySelector('.merge-chip');
+    if (stale) stale.remove();
+    if (data.file_count && data.file_count > 1) {
+      const chip = document.createElement('div');
+      chip.className   = 'chip merge-chip';
+      chip.textContent = `${data.file_count} files merged`;
+      docTypeChip.parentElement.appendChild(chip);
+    }
+
     documentSummaryCard.classList.remove('hidden');
 
-    // Text preview (truncated)
-    documentPreview.textContent = documentText.slice(0, 2400) +
-      (documentText.length > 2400 ? '\n\n… (truncated)' : '');
+    // Extracted text preview (first 3000 chars)
+    documentPreview.textContent =
+      documentText.slice(0, 3000) + (documentText.length > 3000 ? '\n\n… (truncated for display)' : '');
     documentCard.classList.remove('hidden');
 
-    // Agents
     renderAgentList();
     agentControlsCard.classList.remove('hidden');
-
-    // KPIs
     kpiAgents.textContent = agents.length;
 
-    // Enable debate
-    runDebateBtn.disabled = false;
+    const label = (data.file_count > 1) ? `${data.file_count} files merged` : 'Document analysed';
+    toast(`${label} — ${agents.length} agents ready.`, 'success');
 
-    toast(`Analysed — ${agents.length} agents ready.`, 'success');
   } catch (err) {
     toast(`Network error: ${err.message}`, 'error');
   } finally {
@@ -142,43 +192,51 @@ function setAnalyzeLoading(on) {
   analyzeBtn.textContent = on ? 'Analysing…' : 'Analyze Document';
 }
 
-// ── Clear / reset ────────────────────────────────────────────────────────────
+// ── Clear / reset ─────────────────────────────────────────────────────────────
 
 clearBtn.addEventListener('click', () => {
-  documentFile.value   = '';
-  documentText         = '';
-  agents               = [];
-  messageCount         = 0;
+  if (activeStream) { activeStream.abort(); activeStream = null; }
 
+  documentFile.value  = '';
+  documentText        = '';
+  agents              = [];
+  messageCount        = 0;
+
+  fileMeta.innerHTML  = '';
   fileMeta.classList.add('hidden');
   documentSummaryCard.classList.add('hidden');
   documentCard.classList.add('hidden');
   agentControlsCard.classList.add('hidden');
-  agentList.innerHTML  = '';
+  agentList.innerHTML = '';
 
-  timeline.innerHTML   = emptyTimelineHTML();
+  const stale = documentSummaryCard.querySelector('.merge-chip');
+  if (stale) stale.remove();
+
+  timeline.innerHTML  = emptyTimelineHTML();
   summaryContent.textContent = 'No verdict yet.';
   summaryContent.classList.add('muted');
 
   kpiAgents.textContent   = '0';
   kpiMessages.textContent = '0';
 
-  runDebateBtn.disabled  = true;
-  stopDebateBtn.disabled = true;
+  runDebateBtn.disabled   = true;
+  runDebateBtn.classList.remove('btn-cta');
+  stopDebateBtn.disabled  = true;
 
   setStatus('Idle', 'idle');
   setStage('upload');
-
-  if (activeStream) { activeStream.abort(); activeStream = null; }
 });
 
-// ── Agent list rendering ─────────────────────────────────────────────────────
+// ── Agent list rendering ──────────────────────────────────────────────────────
 
 function renderAgentList() {
   agentList.innerHTML = '';
-  agents.forEach((agent, idx) => {
-    agentList.appendChild(buildAgentCard(agent, idx));
-  });
+  agents.forEach((agent, idx) => agentList.appendChild(buildAgentCard(agent, idx)));
+
+  // Highlight Run Debate as the obvious next step once agents are ready
+  const ready = documentText && agents.length >= 2;
+  runDebateBtn.disabled = !ready;
+  runDebateBtn.classList.toggle('btn-cta', !!ready);
 }
 
 function buildAgentCard(agent, idx) {
@@ -195,42 +253,45 @@ function buildAgentCard(agent, idx) {
   card.innerHTML = `
     <div class="agent-card-header">
       <div style="display:flex; align-items:start; gap:var(--space-3); min-width:0;">
-        <div class="agent-pill" style="background:${agent.color}">${agent.icon}</div>
+        <div class="agent-pill" style="background:${escapeHTML(agent.color)}">${escapeHTML(agent.icon)}</div>
         <div class="agent-name-wrap">
-          <h4>${agent.name}</h4>
+          <h4>${escapeHTML(agent.name)}</h4>
           <div class="agent-role">${roleLabel}</div>
         </div>
       </div>
       <div class="agent-actions">
         <button class="btn btn-ghost" data-action="remove" data-idx="${idx}"
-          style="font-size:var(--text-xs); min-height:2rem; padding:0 0.7rem;">
-          Remove
-        </button>
+          style="font-size:var(--text-xs); min-height:2rem; padding:0 0.7rem;">Remove</button>
       </div>
     </div>
-    ${agent.description ? `<p class="muted">${agent.description}</p>` : ''}
+    ${agent.description ? `<p class="muted">${escapeHTML(agent.description)}</p>` : ''}
     <div class="skill-list">
-      ${(agent.skillset || []).map(s => `<span class="skill-tag">${s}</span>`).join('')}
-    </div>
-  `;
+      ${(agent.skillset || []).map(s => `<span class="skill-tag">${escapeHTML(s)}</span>`).join('')}
+    </div>`;
 
   card.querySelector('[data-action="remove"]').addEventListener('click', () => {
     agents.splice(idx, 1);
     kpiAgents.textContent = agents.length;
     renderAgentList();
-    if (agents.length < 2) runDebateBtn.disabled = true;
+    if (agents.length < 2) {
+      runDebateBtn.disabled = true;
+      runDebateBtn.classList.remove('btn-cta');
+    }
   });
 
   return card;
 }
 
-// ── Add Agent modal ──────────────────────────────────────────────────────────
+// ── Add Agent modal ───────────────────────────────────────────────────────────
 
-addAgentBtn.addEventListener('click',   openModal);
-closeModalBtn.addEventListener('click', closeModal);
+addAgentBtn.addEventListener('click',    openModal);
+closeModalBtn.addEventListener('click',  closeModal);
 cancelAgentBtn.addEventListener('click', closeModal);
 agentModalBackdrop.addEventListener('click', e => {
   if (e.target === agentModalBackdrop) closeModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && agentModalBackdrop.classList.contains('open')) closeModal();
 });
 
 function openModal() {
@@ -257,7 +318,7 @@ saveAgentBtn.addEventListener('click', () => {
   const skillset = agentSkillsInput.value
     .split(',').map(s => s.trim()).filter(Boolean);
 
-  const newAgent = {
+  agents.push({
     id:          `custom_${Date.now()}`,
     name,
     role:        agentRoleInput.value,
@@ -265,34 +326,35 @@ saveAgentBtn.addEventListener('click', () => {
     color:       agentColorInput.value,
     description: agentDescriptionInput.value.trim(),
     skillset,
-  };
+  });
 
-  agents.push(newAgent);
   kpiAgents.textContent = agents.length;
   renderAgentList();
-
-  if (agents.length >= 2) runDebateBtn.disabled = false;
+  if (agents.length >= 2) {
+    runDebateBtn.disabled = false;
+    runDebateBtn.classList.add('btn-cta');
+  }
   agentControlsCard.classList.remove('hidden');
   closeModal();
-  toast(`Agent "${name}" added.`, 'success');
+  toast(`Agent "${escapeHTML(name)}" added.`, 'success');
 });
 
-// ── Run debate ───────────────────────────────────────────────────────────────
+// ── Run debate ────────────────────────────────────────────────────────────────
 
 runDebateBtn.addEventListener('click', startDebate);
 
 async function startDebate() {
-  if (!documentText)     { toast('No document loaded.', 'error'); return; }
+  if (!documentText)     { toast('No document loaded.', 'error');      return; }
   if (agents.length < 2) { toast('Need at least 2 agents.', 'error'); return; }
 
   setStage('debate');
-
-  messageCount = 0;
-  timeline.innerHTML = '';
+  messageCount           = 0;
+  timeline.innerHTML     = '';
   summaryContent.textContent = 'Debate in progress…';
   summaryContent.classList.add('muted');
 
   runDebateBtn.disabled  = true;
+  runDebateBtn.classList.remove('btn-cta');
   stopDebateBtn.disabled = false;
   setStatus('Running…', 'running');
 
@@ -330,17 +392,14 @@ async function startDebate() {
       buffer = events.pop();
 
       for (const raw of events) {
-        if (!raw.startsWith('data:')) continue;
-        try {
-          const ev = JSON.parse(raw.slice(5).trim());
-          handleSSE(ev);
-        } catch (_) { /* ignore parse errors */ }
+        const line = raw.split('\n').find(l => l.startsWith('data:'));
+        if (!line) continue;
+        try { handleSSE(JSON.parse(line.slice(5).trim())); }
+        catch (_) {}
       }
     }
   } catch (err) {
-    if (err.name !== 'AbortError') {
-      toast(`Stream error: ${err.message}`, 'error');
-    }
+    if (err.name !== 'AbortError') toast(`Stream error: ${err.message}`, 'error');
   } finally {
     resetDebateControls();
     activeStream = null;
@@ -353,24 +412,20 @@ function handleSSE(ev) {
       timeline.appendChild(buildPhaseCard(ev.content));
       scrollTimeline();
       break;
-
     case 'message':
       messageCount++;
       kpiMessages.textContent = messageCount;
       timeline.appendChild(buildMessageCard(ev.message));
       scrollTimeline();
       break;
-
     case 'verdict':
       summaryContent.textContent = ev.content;
       summaryContent.classList.remove('muted');
       setStage('verdict');
       break;
-
     case 'error':
       toast(ev.content, 'error');
       break;
-
     case 'done':
       setStatus('Complete', 'done');
       toast('Debate complete — verdict ready.', 'success');
@@ -390,7 +445,7 @@ function resetDebateControls() {
   stopDebateBtn.disabled = true;
 }
 
-// ── Timeline builders ────────────────────────────────────────────────────────
+// ── Timeline builders ─────────────────────────────────────────────────────────
 
 function buildPhaseCard(label) {
   const el = document.createElement('div');
@@ -405,20 +460,20 @@ function buildMessageCard(msg) {
   el.innerHTML = `
     <div class="message-head">
       <div class="message-agent">
-        <div class="message-avatar" style="background:${msg.agent_color}">${msg.agent_icon}</div>
+        <div class="message-avatar" style="background:${escapeHTML(msg.agent_color)}">${escapeHTML(msg.agent_icon)}</div>
         <div>
-          <strong>${msg.agent_name}</strong>
-          <span>${msg.phase}</span>
+          <strong>${escapeHTML(msg.agent_name)}</strong>
+          <span>${escapeHTML(msg.phase)}</span>
         </div>
       </div>
     </div>
-    <div class="message-content">${escapeHTML(msg.content)}</div>
-  `;
+    <div class="message-content">${escapeHTML(msg.content)}</div>`;
   return el;
 }
 
 function scrollTimeline() {
-  timeline.scrollTop = timeline.scrollHeight;
+  const body = timeline.closest('.panel-body');
+  if (body) body.scrollTop = body.scrollHeight;
 }
 
 function emptyTimelineHTML() {
@@ -432,19 +487,19 @@ function emptyTimelineHTML() {
     </div>`;
 }
 
-// ── Status pill ──────────────────────────────────────────────────────────────
+// ── Status pill ───────────────────────────────────────────────────────────────
 
 function setStatus(label, state) {
   const span = debateStatus.querySelector('span:last-child');
   if (span) span.textContent = label;
   debateStatus.style.setProperty('--status-color',
     state === 'running' ? 'var(--color-warning)' :
-    state === 'done'    ? 'var(--color-success)' :
+    state === 'done'    ? 'var(--color-success)'  :
                           'var(--color-primary)'
   );
 }
 
-// ── Toast ────────────────────────────────────────────────────────────────────
+// ── Toast ─────────────────────────────────────────────────────────────────────
 
 function toast(message, type = 'info') {
   const el = document.createElement('div');
@@ -458,7 +513,7 @@ function toast(message, type = 'info') {
   }, 3500);
 }
 
-// ── Utilities ────────────────────────────────────────────────────────────────
+// ── Utilities ─────────────────────────────────────────────────────────────────
 
 function formatBytes(bytes) {
   if (bytes < 1024)    return bytes + ' B';
@@ -467,13 +522,14 @@ function formatBytes(bytes) {
 }
 
 function escapeHTML(str) {
-  return str
+  return String(str ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
 
-// ── Boot ─────────────────────────────────────────────────────────────────────
+// ── Boot ──────────────────────────────────────────────────────────────────────
 
 setStage('upload');
+analyzeBtn.disabled = true;
